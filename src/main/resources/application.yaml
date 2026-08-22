@@ -1,0 +1,32 @@
+server:
+  port: 8090
+
+spring:
+  application:
+    name: api_gateway
+  cloud:
+    gateway:
+      routes:
+        - id: auth-service
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/v1/auth/**
+
+        - id: user-service
+          uri: ${USER_SERVICE_URL:http://localhost:8080}
+          predicates:
+            - Path=/api/v1/users/**
+
+        - id: order-service
+          uri: ${ORDER_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/orders/**
+
+service-urls:
+  auth-service: ${AUTH_SERVICE_URL:http://localhost:8081}
+  user-service: ${USER_SERVICE_URL:http://localhost:8080}
+
+gateway:
+  service-account:
+    login: ${GATEWAY_SERVICE_LOGIN:admin}
+    password: ${GATEWAY_SERVICE_PASSWORD}
