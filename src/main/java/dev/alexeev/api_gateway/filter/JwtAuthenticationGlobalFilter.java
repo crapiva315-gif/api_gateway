@@ -70,7 +70,7 @@ public class JwtAuthenticationGlobalFilter implements GlobalFilter, Ordered {
   }
 
   private boolean isPublicPath(String path) {
-    return PUBLIC_PATHS.stream().anyMatch(path::startsWith);
+    return PUBLIC_PATHS.contains(path);
   }
 
   private Mono<Void> unauthorized(ServerWebExchange exchange) {
