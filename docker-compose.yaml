@@ -1,0 +1,180 @@
+name: microservices-system
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  auth-db-data:
+  user-db-data:
+  order-db-data:
+  redis-data:
+
+services:
+
+  # ---------------------------------------------------------------
+  # Infrastructure
+  # ---------------------------------------------------------------
+  auth-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_pass
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_user -d auth_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  user-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: user_user
+      POSTGRES_PASSWORD: user_pass
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_user -d user_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  order-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: order_user
+      POSTGRES_PASSWORD: order_pass
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U order_user -d order_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  auth-service:
+    build:
+      context: ../auth_service
+      dockerfile: Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: auth-db
+      DB_PORT: 5432
+      DB_NAME: auth_db
+      DB_USERNAME: auth_user
+      DB_PASSWORD: auth_pass
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_EXPIRATION: ${JWT_ACCESS_EXPIRATION:-900000}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-604800000}
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    networks:
+      - backend
+
+  user-service:
+    build:
+      context: ../user_service
+      dockerfile: Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://user-db:5432/user_db
+      SPRING_DATASOURCE_USERNAME: user_user
+      SPRING_DATASOURCE_PASSWORD: user_pass
+      DB_HOST: user-db
+      DB_PORT: 5432
+      DB_NAME: user_db
+      DB_USERNAME: user_user
+      DB_PASSWORD: user_pass
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+    depends_on:
+      user-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    networks:
+      - backend
+
+  order-service:
+    build:
+      context: ../order_service
+      dockerfile: Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/order_db
+      SPRING_DATASOURCE_USERNAME: order_user
+      SPRING_DATASOURCE_PASSWORD: order_pass
+      DB_HOST: order-db
+      DB_PORT: 5432
+      DB_NAME: order_db
+      DB_USERNAME: order_user
+      DB_PASSWORD: order_pass
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      AUTH_SERVICE_URL: http://auth-service:8081
+      USER_SERVICE_URL: http://user-service:8080
+    depends_on:
+      order-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+    networks:
+      - backend
+
+  api-gateway:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8081
+      USER_SERVICE_URL: http://user-service:8080
+      ORDER_SERVICE_URL: http://order-service:8082
+      GATEWAY_SERVICE_LOGIN: ${GATEWAY_SERVICE_LOGIN}
+      GATEWAY_SERVICE_PASSWORD: ${GATEWAY_SERVICE_PASSWORD}
+    depends_on:
+      - auth-service
+      - user-service
+      - order-service
+    ports:
+      - "8090:8090"
+    networks:
+      - backend
